@@ -10,6 +10,16 @@ import math
 
 from classification import training, getLabel
 
+# SIGNS = ["ERROR",
+#         "STOP",
+#         "TURN LEFT",
+#         "TURN RIGHT",
+#         "DO NOT TURN LEFT",
+#         "DO NOT TURN RIGHT",
+#         "ONE WAY",
+#         "SPEED LIMIT",
+#         "OTHER"]
+
 SIGNS = ["ERROR",
         "STOP",
         "TURN LEFT",
@@ -17,8 +27,13 @@ SIGNS = ["ERROR",
         "DO NOT TURN LEFT",
         "DO NOT TURN RIGHT",
         "ONE WAY",
-        "SPEED LIMIT",
-        "OTHER"]
+        "40 KM/H",
+        "30 KM/H", 
+        "ONLY RIGHT",
+        "OTHER",
+        "Cam 30"
+        "ONLY LEFT"]
+
 
 # Clean all previous file
 def clean_images():
@@ -100,7 +115,7 @@ def cropContour(image, center, max_distance):
     bottom = min([int(center[0] + max_distance + 1), height-1])
     left = max([int(center[1] - max_distance), 0])
     right = min([int(center[1] + max_distance+1), width-1])
-    print(left, right, top, bottom)
+    #print(left, right, top, bottom)
     return image[left:right, top:bottom]
 
 def cropSign(image, coordinate):
@@ -228,7 +243,7 @@ def main(args):
 	#Clean previous image    
     clean_images()
     #Training phase
-    model = training()
+    model, acc = training()
 
     vidcap = cv2.VideoCapture(args.file_name)
 
@@ -258,101 +273,105 @@ def main(args):
     position = []
     file = open("Output.txt", "w")
     while True:
-        success,frame = vidcap.read()
-        if not success:
-            print("FINISHED")
-            break
-        width = frame.shape[1]
-        height = frame.shape[0]
-        #frame = cv2.resize(frame, (640,int(height/(width/640))))
-        frame = cv2.resize(frame, (640,480))
+        try:
+            success,frame = vidcap.read()
+            if not success:
+                #print("FINISHED")
+                break
+            width = frame.shape[1]
+            height = frame.shape[0]
+            #frame = cv2.resize(frame, (640,int(height/(width/640))))
+            frame = cv2.resize(frame, (640,480))
 
-        print("Frame:{}".format(count))
-        #image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        coordinate, image, sign_type, text = localization(frame, args.min_size_components, args.similitary_contour_with_circle, model, count, current_sign)
-        if coordinate is not None:
-            cv2.rectangle(image, coordinate[0],coordinate[1], (255, 255, 255), 1)
-        print("Sign:{}".format(sign_type))
-        if sign_type > 0 and (not current_sign or sign_type != current_sign):
-            current_sign = sign_type
-            current_text = text
-            top = int(coordinate[0][1]*1.05)
-            left = int(coordinate[0][0]*1.05)
-            bottom = int(coordinate[1][1]*0.95)
-            right = int(coordinate[1][0]*0.95)
+            #print("Frame:{}".format(count))
+            #image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+            coordinate, image, sign_type, text = localization(frame, args.min_size_components, args.similitary_contour_with_circle, model, count, current_sign)
+            if coordinate is not None:
+                cv2.rectangle(image, coordinate[0],coordinate[1], (255, 255, 255), 1)
+            #print("Sign:{}".format(sign_type))
+            if sign_type > 0 and (not current_sign or sign_type != current_sign):
+                current_sign = sign_type
+                current_text = text
+                top = int(coordinate[0][1]*1.05)
+                left = int(coordinate[0][0]*1.05)
+                bottom = int(coordinate[1][1]*0.95)
+                right = int(coordinate[1][0]*0.95)
 
-            position = [count, sign_type if sign_type <= 8 else 8, coordinate[0][0], coordinate[0][1], coordinate[1][0], coordinate[1][1]]
-            cv2.rectangle(image, coordinate[0],coordinate[1], (0, 255, 0), 1)
-            font = cv2.FONT_HERSHEY_PLAIN
-            cv2.putText(image,text,(coordinate[0][0], coordinate[0][1] -15), font, 1,(0,0,255),2,cv2.LINE_4)
-
-            tl = [left, top]
-            br = [right,bottom]
-            print(tl, br)
-            current_size = math.sqrt(math.pow((tl[0]-br[0]),2) + math.pow((tl[1]-br[1]),2))
-            # grab the ROI for the bounding box and convert it
-            # to the HSV color space
-            roi = frame[tl[1]:br[1], tl[0]:br[0]]
-            roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
-            #roi = cv2.cvtColor(roi, cv2.COLOR_BGR2LAB)
-
-            # compute a HSV histogram for the ROI and store the
-            # bounding box
-            roiHist = cv2.calcHist([roi], [0], None, [16], [0, 180])
-            roiHist = cv2.normalize(roiHist, roiHist, 0, 255, cv2.NORM_MINMAX)
-            roiBox = (tl[0], tl[1], br[0], br[1])
-
-        elif current_sign:
-            hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-            backProj = cv2.calcBackProject([hsv], [0], roiHist, [0, 180], 1)
-
-            # apply cam shift to the back projection, convert the
-            # points to a bounding box, and then draw them
-            (r, roiBox) = cv2.CamShift(backProj, roiBox, termination)
-            pts = np.int0(cv2.boxPoints(r))
-            s = pts.sum(axis = 1)
-            tl = pts[np.argmin(s)]
-            br = pts[np.argmax(s)]
-            size = math.sqrt(pow((tl[0]-br[0]),2) +pow((tl[1]-br[1]),2))
-            print(size)
-
-            if  current_size < 1 or size < 1 or size / current_size > 30 or math.fabs((tl[0]-br[0])/(tl[1]-br[1])) > 2 or math.fabs((tl[0]-br[0])/(tl[1]-br[1])) < 0.5:
-                current_sign = None
-                print("Stop tracking")
-            else:
-                current_size = size
-
-            if sign_type > 0:
-                top = int(coordinate[0][1])
-                left = int(coordinate[0][0])
-                bottom = int(coordinate[1][1])
-                right = int(coordinate[1][0])
-
-                position = [count, sign_type if sign_type <= 8 else 8, left, top, right, bottom]
+                position = [count, sign_type if sign_type <= 8 else 8, coordinate[0][0], coordinate[0][1], coordinate[1][0], coordinate[1][1]]
                 cv2.rectangle(image, coordinate[0],coordinate[1], (0, 255, 0), 1)
                 font = cv2.FONT_HERSHEY_PLAIN
                 cv2.putText(image,text,(coordinate[0][0], coordinate[0][1] -15), font, 1,(0,0,255),2,cv2.LINE_4)
+
+                tl = [left, top]
+                br = [right,bottom]
+                #print(tl, br)
+                current_size = math.sqrt(math.pow((tl[0]-br[0]),2) + math.pow((tl[1]-br[1]),2))
+                # grab the ROI for the bounding box and convert it
+                # to the HSV color space
+                roi = frame[tl[1]:br[1], tl[0]:br[0]]
+                roi = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+                #roi = cv2.cvtColor(roi, cv2.COLOR_BGR2LAB)
+
+                # compute a HSV histogram for the ROI and store the
+                # bounding box
+                roiHist = cv2.calcHist([roi], [0], None, [16], [0, 180])
+                roiHist = cv2.normalize(roiHist, roiHist, 0, 255, cv2.NORM_MINMAX)
+                roiBox = (tl[0], tl[1], br[0], br[1])
+
             elif current_sign:
-                position = [count, sign_type if sign_type <= 8 else 8, tl[0], tl[1], br[0], br[1]]
-                cv2.rectangle(image, (tl[0], tl[1]),(br[0], br[1]), (0, 255, 0), 1)
-                font = cv2.FONT_HERSHEY_PLAIN
-                cv2.putText(image,current_text,(tl[0], tl[1] -15), font, 1,(0,0,255),2,cv2.LINE_4)
+                hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+                backProj = cv2.calcBackProject([hsv], [0], roiHist, [0, 180], 1)
 
-        if current_sign:
-            sign_count += 1
-            coordinates.append(position)
+                # apply cam shift to the back projection, convert the
+                # points to a bounding box, and then draw them
+                (r, roiBox) = cv2.CamShift(backProj, roiBox, termination)
+                pts = np.int0(cv2.boxPoints(r))
+                s = pts.sum(axis = 1)
+                tl = pts[np.argmin(s)]
+                br = pts[np.argmax(s)]
+                size = math.sqrt(pow((tl[0]-br[0]),2) +pow((tl[1]-br[1]),2))
+                #print(size)
 
-        cv2.imshow('Result', image)
-        count = count + 1
-        #Write to video
-        out.write(image)
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+                if  current_size < 1 or size < 1 or size / current_size > 30 or math.fabs((tl[0]-br[0])/(tl[1]-br[1])) > 2 or math.fabs((tl[0]-br[0])/(tl[1]-br[1])) < 0.5:
+                    current_sign = None
+                    #print("Stop tracking")
+                else:
+                    current_size = size
+
+                if sign_type > 0:
+                    top = int(coordinate[0][1])
+                    left = int(coordinate[0][0])
+                    bottom = int(coordinate[1][1])
+                    right = int(coordinate[1][0])
+
+                    position = [count, sign_type if sign_type <= 8 else 8, left, top, right, bottom]
+                    cv2.rectangle(image, coordinate[0],coordinate[1], (0, 255, 0), 1)
+                    font = cv2.FONT_HERSHEY_PLAIN
+                    cv2.putText(image,text,(coordinate[0][0], coordinate[0][1] -15), font, 1,(0,0,255),2,cv2.LINE_4)
+                elif current_sign:
+                    position = [count, sign_type if sign_type <= 8 else 8, tl[0], tl[1], br[0], br[1]]
+                    cv2.rectangle(image, (tl[0], tl[1]),(br[0], br[1]), (0, 255, 0), 1)
+                    font = cv2.FONT_HERSHEY_PLAIN
+                    cv2.putText(image,current_text,(tl[0], tl[1] -15), font, 1,(0,0,255),2,cv2.LINE_4)
+
+            if current_sign:
+                sign_count += 1
+                coordinates.append(position)
+
+            cv2.imshow('Result', image)
+            count = count + 1
+            #Write to video
+            out.write(image)
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+        except:
+            pass
     file.write("{}".format(sign_count))
     for pos in coordinates:
         file.write("\n{} {} {} {} {} {}".format(pos[0],pos[1],pos[2],pos[3],pos[4], pos[5]))
-    print("Finish {} frames".format(count))
+    #print("Finish {} frames".format(count))
     file.close()
+    print('Accuracy: %.2f %%' % acc)
     return 
 
 

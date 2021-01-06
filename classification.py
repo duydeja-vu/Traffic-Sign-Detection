@@ -57,26 +57,30 @@ class SVM(StatModel):
         return self.model.predict(samples)[1].ravel()
 
 
-def evaluate_model(model, data, samples, labels):
+def evaluate_model(model,  samples, labels):
     resp = model.predict(samples)
     print(resp)
     err = (labels != resp).mean()
-    print('Accuracy: %.2f %%' % ((1 - err)*100))
+    acc = (1 - err)*100
+    #print('Accuracy: %.2f %%' % ((1 - err)*100))
 
-    confusion = np.zeros((10, 10), np.int32)
-    for i, j in zip(labels, resp):
-        confusion[int(i), int(j)] += 1
-    print('confusion matrix:')
-    print(confusion)
+    
+    # confusion = np.zeros((10, 10), np.int32)
+    # for i, j in zip(labels, resp):
+    #     confusion[int(i), int(j)] += 1
+    # print('confusion matrix:')
+    # print(confusion)
 
-    vis = []
-    for img, flag in zip(data, resp == labels):
-        img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-        if not flag:
-            img[...,:2] = 0
+    # vis = []
+    # for img, flag in zip(data, resp == labels):
+    #     img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+    #     if not flag:
+    #         img[...,:2] = 0
         
-        vis.append(img)
-    return mosaic(16, vis)
+    #     vis.append(img)
+    return acc
+    
+    
 
 def preprocess_simple(data):
     return np.float32(data).reshape(-1, SIZE*SIZE) / 255.0
@@ -137,10 +141,11 @@ def training():
     print('Training SVM model ...')
     model = SVM()
     model.train(hog_descriptors_train, labels_train)
+    acc = evaluate_model(model,hog_descriptors_test, labels_test )
 
     print('Saving SVM model ...')
     model.save('data_svm.dat')
-    return model
+    return model, acc
 
 def getLabel(model, data):
     gray = cv2.cvtColor(data, cv2.COLOR_BGR2GRAY)
